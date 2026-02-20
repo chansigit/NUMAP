@@ -7,6 +7,42 @@ from grease import GrEASE
 
 
 class NUMAP():
+    """NUMAP: A generalizable parametric UMAP implementation.
+
+    Combines spectral embedding (via GrEASE or sklearn) with a parametric
+    UMAP encoder for dimensionality reduction with out-of-sample extension.
+
+    Supports DensMAP density-preserving regularization, which adds a loss
+    term that encourages the low-dimensional embedding to preserve local
+    density structure from the original high-dimensional space. Enable it
+    by setting ``densmap=True``.
+
+    DensMAP parameters:
+        densmap (bool): Enable density-preserving regularization.
+            Default: False.
+        dens_lambda (float): Weight of the density loss term. Higher values
+            produce stronger density preservation at the cost of cluster
+            separation. Recommended range: 0.1-2.0. Default: 2.0.
+        dens_frac (float): Fraction of total training epochs during which
+            the density loss is active (counted from the end of training).
+            For example, 0.3 means the last 30% of epochs. Default: 0.3.
+        dens_var_shift (float): Small constant added to variance estimates
+            in the Pearson correlation for numerical stability. Default: 0.1.
+        dens_subsample_size (int): Number of vertices to randomly subsample
+            per training step for density loss computation. Larger values give
+            more accurate gradient estimates but use more memory. Default: 10000.
+
+    Example:
+        >>> numap = NUMAP(
+        ...     n_neighbors=10, epochs=50, lr=1e-3,
+        ...     densmap=True,          # enable density preservation
+        ...     dens_lambda=2.0,       # regularization strength
+        ...     dens_frac=0.3,         # activate in last 30% of epochs
+        ... )
+        >>> numap.fit(X)               # X is a torch.Tensor
+        >>> embedding = numap.transform(X)
+    """
+
     def __init__(self,
                  encoder=None,
                  n_neighbors=10,
@@ -34,7 +70,12 @@ class NUMAP():
                  init_method='identity',
                  grease_hiddens=[128, 256, 256],
                  grease=None,
-                 use_true_eigenvectors=True, ):
+                 use_true_eigenvectors=True,
+                 densmap=False,
+                 dens_lambda=2.0,
+                 dens_frac=0.3,
+                 dens_var_shift=0.1,
+                 dens_subsample_size=10000, ):
         self.encoder = encoder
         self.n_neighbors = n_neighbors
         self.min_dist = min_dist
@@ -82,6 +123,12 @@ class NUMAP():
         self.grease_hiddens = grease_hiddens
         self.use_true_eigenvectors = use_true_eigenvectors
 
+        self.densmap = densmap
+        self.dens_lambda = dens_lambda
+        self.dens_frac = dens_frac
+        self.dens_var_shift = dens_var_shift
+        self.dens_subsample_size = dens_subsample_size
+
         self.knn = None
 
     def fit(self, X):
@@ -108,6 +155,11 @@ class NUMAP():
             use_alpha=self.use_alpha,
             alpha=self.alpha,
             init_method=self.init_method,
+            densmap=self.densmap,
+            dens_lambda=self.dens_lambda,
+            dens_frac=self.dens_frac,
+            dens_var_shift=self.dens_var_shift,
+            dens_subsample_size=self.dens_subsample_size,
         )
 
         if self.use_grease:

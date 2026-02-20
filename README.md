@@ -40,10 +40,17 @@ with the new capability of out-of-sample extension.
 [//]: # (<img src="https://github.com/shaham-lab/NUMAP/raw/main/figures/intro_fig_idsai_colored.png">)
 
 ## Installation
-To install the package, simply use the following command:
+
+Install the latest stable release from PyPI:
 
 ```bash
 pip install numap
+```
+
+To install the latest development version (with DensMAP support) directly from GitHub:
+
+```bash
+pip install git+https://github.com/chansigit/NUMAP.git
 ```
 
 ## Usage
@@ -55,12 +62,66 @@ from numap import NUMAP
 
 numap = NUMAP(n_components=2)  # n_components is the number of dimensions in the low-dimensional representation
 numap.fit(X)  # X is the dataset and it should be a torch.Tensor
-X_reduced = numap.transfrom(X)  # Get the low-dimensional representation of the dataset
+X_reduced = numap.transform(X)  # Get the low-dimensional representation of the dataset
 Y_reduced = numap.transform(Y)  # Get the low-dimensional representation of a test dataset
-
 ```
 
 You can read the code docs for more information and functionalities.<br>
+
+## DensMAP: Density-Preserving Visualization
+
+NUMAP supports **DensMAP**, a density-preserving extension of UMAP that encourages the
+low-dimensional embedding to preserve the local density structure of the original
+high-dimensional data. This is useful when the relative densities of clusters carry
+meaningful information (e.g., cell population sizes in single-cell RNA-seq).
+
+### Quick start
+
+```python
+from numap import NUMAP
+
+numap = NUMAP(
+    n_neighbors=10,
+    epochs=50,
+    lr=1e-3,
+    densmap=True,           # enable density preservation
+    dens_lambda=2.0,        # density regularization strength
+    dens_frac=0.3,          # activate in last 30% of epochs
+)
+numap.fit(X)                # X is a torch.Tensor
+embedding = numap.transform(X)
+```
+
+### DensMAP Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `densmap` | `False` | Enable density-preserving regularization. |
+| `dens_lambda` | `2.0` | Weight of the density loss. Higher values give stronger density preservation at the cost of cluster separation. Recommended range: 0.1–2.0. |
+| `dens_frac` | `0.3` | Fraction of total epochs (from the end) during which the density loss is active. For example, `0.3` means the last 30% of epochs. |
+| `dens_var_shift` | `0.1` | Small constant for numerical stability in the Pearson correlation. |
+| `dens_subsample_size` | `10000` | Number of vertices randomly subsampled per training step for density loss. Larger = more accurate but more memory. |
+
+### How it works
+
+DensMAP adds a regularization term to the UMAP loss:
+
+**L = L_UMAP + L_density**
+
+where L_density = −λ · Pearson(R_orig, R_emb).
+
+- **R_orig** captures the local density around each point in the original space, computed from the UMAP fuzzy graph (pre-computed once before training).
+- **R_emb** captures the local density in the embedding space, recomputed during training using a differentiable UMAP kernel.
+- Minimizing −Pearson(R_orig, R_emb) pushes the embedding to preserve relative densities.
+
+The density loss is only activated during the last `dens_frac` fraction of training, allowing the UMAP structure to form first before density refinement.
+
+### Tuning tips
+
+- Start with `dens_lambda=0.5` for a good balance between cluster separation and density preservation.
+- Increase `dens_lambda` (up to 2.0) if density preservation is more important than cluster separation.
+- Decrease `dens_lambda` (e.g., 0.1) if clusters are merging too much.
+- Use more `epochs` (50+) when DensMAP is enabled, since the density phase needs enough steps to converge.
 
 ## Running examples
 
